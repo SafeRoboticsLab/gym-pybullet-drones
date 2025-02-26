@@ -33,22 +33,28 @@ from gym_pybullet_drones.envs.MultiHoverAviary import MultiHoverAviary
 from gym_pybullet_drones.utils.utils import sync, str2bool
 from gym_pybullet_drones.utils.enums import ObservationType, ActionType
 
-DEFAULT_GUI = True
-DEFAULT_RECORD_VIDEO = False
-DEFAULT_OUTPUT_FOLDER = 'results'
-DEFAULT_COLAB = False
+DEFAULT_GUI = True  # Use PyBullet GUI by default
+DEFAULT_RECORD_VIDEO = False # Don't record video by default
+DEFAULT_OUTPUT_FOLDER = 'results' # Default output folder for logs
+DEFAULT_COLAB = False # Whether running on Google Colab
 
-DEFAULT_OBS = ObservationType('kin') # 'kin' or 'rgb'
-DEFAULT_ACT = ActionType('one_d_rpm') # 'rpm' or 'pid' or 'vel' or 'one_d_rpm' or 'one_d_pid'
-DEFAULT_AGENTS = 2
-DEFAULT_MA = False
+DEFAULT_OBS = ObservationType('kin') # options: 'kin' (kinematic) or 'rgb' (camera image)
+DEFAULT_ACT = ActionType('one_d_rpm') # options: 'rpm' (rotations per minute - controls individual motors) or 'pid' or 'vel' or 'one_d_rpm' or 'one_d_pid'
+# NOTE: "one_d_rpm" simplifies the action space -> instead of setting 4 motor speeds, set only one
+DEFAULT_AGENTS = 2 # Default number of agents for multi-agent setup
+DEFAULT_MA = False # Default to single-agent mode
 
 def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_GUI, plot=True, colab=DEFAULT_COLAB, record_video=DEFAULT_RECORD_VIDEO, local=True):
+    '''
+    Method to train and evaluate a PPO agent on the HoverAviary environment
+    '''
 
+    ### Create a folder for saving results with a timestamp
     filename = os.path.join(output_folder, 'save-'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
     if not os.path.exists(filename):
         os.makedirs(filename+'/')
 
+    ### initialize the environment
     if not multiagent:
         train_env = make_vec_env(HoverAviary,
                                  env_kwargs=dict(obs=DEFAULT_OBS, act=DEFAULT_ACT),
@@ -64,23 +70,27 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                                  )
         eval_env = MultiHoverAviary(num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT)
 
-    #### Check the environment's spaces ########################
+    #### Check the environment's spaces 
     print('[INFO] Action space:', train_env.action_space)
     print('[INFO] Observation space:', train_env.observation_space)
 
-    #### Train the model #######################################
-    model = PPO('MlpPolicy',
+    #### Train the model
+    model = PPO('MlpPolicy', 
                 train_env,
                 # tensorboard_log=filename+'/tb/',
                 verbose=1)
 
-    #### Target cumulative rewards (problem-dependent) ##########
+    #### Target cumulative rewards (problem-dependent)
     if DEFAULT_ACT == ActionType.ONE_D_RPM:
         target_reward = 474.15 if not multiagent else 949.5
     else:
         target_reward = 467. if not multiagent else 920.
+
+    ### Callback to stop training when reward threshold is reached
     callback_on_best = StopTrainingOnRewardThreshold(reward_threshold=target_reward,
                                                      verbose=1)
+    
+    ### Callback to evaluate the model and save the best one
     eval_callback = EvalCallback(eval_env,
                                  callback_on_new_best=callback_on_best,
                                  verbose=1,
@@ -89,15 +99,17 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                                  eval_freq=int(1000),
                                  deterministic=True,
                                  render=False)
+    
+    ### Train the model 
     model.learn(total_timesteps=int(1e7) if local else int(1e2), # shorter training in GitHub Actions pytest
                 callback=eval_callback,
                 log_interval=100)
 
-    #### Save the model ########################################
+    #### Save the model 
     model.save(filename+'/final_model.zip')
     print(filename)
 
-    #### Print training progression ############################
+    #### Print training progression
     with np.load(filename+'/evaluations.npz') as data:
         for j in range(data['timesteps'].shape[0]):
             print(str(data['timesteps'][j])+","+str(data['results'][j][0]))
@@ -113,13 +125,15 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
 
     # if os.path.isfile(filename+'/final_model.zip'):
     #     path = filename+'/final_model.zip'
+
+    ### Load the best trained model
     if os.path.isfile(filename+'/best_model.zip'):
         path = filename+'/best_model.zip'
     else:
         print("[ERROR]: no model under the specified path", filename)
     model = PPO.load(path)
 
-    #### Show (and record a video of) the model's performance ##
+    #### Test the trained model and show (and record a video of) the model's performance
     if not multiagent:
         test_env = HoverAviary(gui=gui,
                                obs=DEFAULT_OBS,
