@@ -4,7 +4,7 @@ from gym_pybullet_drones.envs.BaseRLAviary import BaseRLAviary
 from gym_pybullet_drones.utils.enums import DroneModel, Physics, ActionType, ObservationType
 
 class HoverAviary(BaseRLAviary):
-    """Single agent RL problem: hover at position."""
+    """Single agent RL enviornment for training a frone to hover at a fixed position"""
 
     ################################################################################
     
@@ -20,7 +20,8 @@ class HoverAviary(BaseRLAviary):
                  obs: ObservationType=ObservationType.KIN,
                  act: ActionType=ActionType.RPM
                  ):
-        """Initialization of a single agent RL environment.
+        """
+        Initialization of a single agent RL environment.
 
         Using the generic single agent RL superclass.
 
@@ -46,10 +47,14 @@ class HoverAviary(BaseRLAviary):
             The type of observation space (kinematic information or vision)
         act : ActionType, optional
             The type of action space (1 or 3D; RPMS, thurst and torques, or waypoint with PID control)
-
         """
-        self.TARGET_POS = np.array([0,0,1])
-        self.EPISODE_LEN_SEC = 8
+        
+        self.TARGET_POS = np.array([0,0,1]) # hovering target
+        self.EPISODE_LEN_SEC = 8 # max episode length
+
+        # calls the parent class BaseRLAviary (which class Base Aviary which call gym.Env)
+        # setting up action space, observation space, and rest/step logic
+        # Initializes 
         super().__init__(drone_model=drone_model,
                          num_drones=1,
                          initial_xyzs=initial_xyzs,
@@ -74,8 +79,12 @@ class HoverAviary(BaseRLAviary):
             The reward.
 
         """
+        # get the state of the drone (here, drone 0)
         state = self._getDroneStateVector(0)
+
+        # reward is based on distance to the target position
         ret = max(0, 2 - np.linalg.norm(self.TARGET_POS-state[0:3])**4)
+
         return ret
 
     ################################################################################
@@ -90,6 +99,8 @@ class HoverAviary(BaseRLAviary):
 
         """
         state = self._getDroneStateVector(0)
+
+        # episode is done when the drone reaches the target position
         if np.linalg.norm(self.TARGET_POS-state[0:3]) < .0001:
             return True
         else:
@@ -107,6 +118,7 @@ class HoverAviary(BaseRLAviary):
 
         """
         state = self._getDroneStateVector(0)
+
         if (abs(state[0]) > 1.5 or abs(state[1]) > 1.5 or state[2] > 2.0 # Truncate when the drone is too far away
              or abs(state[7]) > .4 or abs(state[8]) > .4 # Truncate when the drone is too tilted
         ):

@@ -45,93 +45,8 @@ DEFAULT_AGENTS = 2 # Default number of agents for multi-agent setup
 DEFAULT_MA = False # Default to single-agent mode
 
 def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_GUI, plot=True, colab=DEFAULT_COLAB, record_video=DEFAULT_RECORD_VIDEO, local=True):
-    '''
-    Method to train and evaluate a PPO agent on the HoverAviary environment
-    '''
 
-    ### Create a folder for saving results with a timestamp
-    filename = os.path.join(output_folder, 'save-'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
-    if not os.path.exists(filename):
-        os.makedirs(filename+'/')
-
-    ### initialize the environment
-    # NOTE: make_vec_env is a utility function to vectorize the gym env (i.e. run multiple instances of the same environment in parallel)
-    if not multiagent:
-        train_env = make_vec_env(HoverAviary,
-                                 env_kwargs=dict(obs=DEFAULT_OBS, act=DEFAULT_ACT),
-                                 n_envs=1,
-                                 seed=0
-                                 )
-        eval_env = HoverAviary(obs=DEFAULT_OBS, act=DEFAULT_ACT)
-    else:
-        train_env = make_vec_env(MultiHoverAviary,
-                                 env_kwargs=dict(num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT),
-                                 n_envs=1,
-                                 seed=0
-                                 )
-        eval_env = MultiHoverAviary(num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT)
-
-    #### Check the environment's spaces 
-    print('[INFO] Action space:', train_env.action_space)
-    print('[INFO] Observation space:', train_env.observation_space)
-
-    #### Train the model
-    model = PPO('MlpPolicy', 
-                train_env,
-                # tensorboard_log=filename+'/tb/',
-                verbose=1)
-
-    #### Target cumulative rewards (problem-dependent)
-    if DEFAULT_ACT == ActionType.ONE_D_RPM:
-        target_reward = 474.15 if not multiagent else 949.5
-    else:
-        target_reward = 467. if not multiagent else 920.
-
-    ### Callback to stop training when reward threshold is reached
-    callback_on_best = StopTrainingOnRewardThreshold(reward_threshold=target_reward,
-                                                     verbose=1)
-    
-    ### Callback to evaluate the model and save the best one
-    eval_callback = EvalCallback(eval_env,
-                                 callback_on_new_best=callback_on_best,
-                                 verbose=1,
-                                 best_model_save_path=filename+'/',
-                                 log_path=filename+'/',
-                                 eval_freq=int(1000),
-                                 deterministic=True,
-                                 render=False)
-    
-    ### Train the model 
-    model.learn(total_timesteps=int(1e7) if local else int(1e2), # shorter training in GitHub Actions pytest
-                callback=eval_callback,
-                log_interval=100)
-
-    #### Save the model 
-    model.save(filename+'/final_model.zip')
-    print(filename)
-
-    #### Print training progression
-    with np.load(filename+'/evaluations.npz') as data:
-        for j in range(data['timesteps'].shape[0]):
-            print(str(data['timesteps'][j])+","+str(data['results'][j][0]))
-
-    ############################################################
-    ############################################################
-    ############################################################
-    ############################################################
-    ############################################################
-
-    if local:
-        input("Press Enter to continue...")
-
-    # if os.path.isfile(filename+'/final_model.zip'):
-    #     path = filename+'/final_model.zip'
-
-    ### Load the best trained model
-    if os.path.isfile(filename+'/best_model.zip'):
-        path = filename+'/best_model.zip'
-    else:
-        print("[ERROR]: no model under the specified path", filename)
+    path = "/home/madisonbland/Documents/gym-pybullet-drones/gym_pybullet_drones/examples/results/save-02.27.2025_14.15.51/best_model.zip"
     model = PPO.load(path)
 
     #### Test the trained model and show (and record a video of) the model's performance
@@ -162,6 +77,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
 
     obs, info = test_env.reset(seed=42, options={})
     start = time.time()
+    test_env.EPISODE_LEN_SEC = 100
     for i in range((test_env.EPISODE_LEN_SEC+2)*test_env.CTRL_FREQ):
         action, _states = model.predict(obs,
                                         deterministic=True
